@@ -27,12 +27,14 @@ button{background:none;border:0;color:inherit;cursor:pointer;padding:0}
 .work-detail-outer{display:grid;grid-template-rows:0fr;opacity:0;transition:all .45s cubic-bezier(0.22,1,0.36,1)}
 .work-item.open .work-detail-outer{grid-template-rows:1fr;opacity:1;padding-bottom:16px}
 .work-detail-inner{overflow:hidden}
-.pagination{display:flex;flex-wrap:wrap;gap:10px;margin-top:32px;font-family:Inter,sans-serif;font-size:12px}
-.pagination button{padding:6px 10px;border:1px solid #2A2A2A;border-radius:9999px;min-width:32px;transition:all .2s}
-.pagination button.active{background:#FAFAFA;color:#000;border-color:#FAFAFA}
-.pagination button.inactive{color:#B0B0B0}
-.pagination button.inactive:hover{color:#FAFAFA;border-color:#555}
-.pagination .dots{color:#555;padding:6px 2px}
+.pagination{display:flex;flex-wrap:wrap;align-items:center;gap:18px;margin-top:32px;font-family:Inter,sans-serif;font-size:12px;letter-spacing:.02em}
+.pagination button{padding:0 0 2px 0;border:0;border-bottom:1px solid transparent;background:transparent;border-radius:0;min-width:auto;line-height:1;transition:all .2s}
+.pagination button.active{color:#FAFAFA;border-bottom-color:#FAFAFA;font-weight:500}
+.pagination button.inactive{color:#5A5A5A}
+.pagination button.inactive:hover{color:#FAFAFA}
+.pagination .dots{color:#3A3A3A;padding:0 2px}
+.pagination .arrow{font-size:14px;color:#5A5A5A}
+.pagination .arrow:hover{color:#FAFAFA}
 input,textarea{width:100%;background:#0E0E0E;border:1px solid #2A2A2A;border-radius:8px;color:#FAFAFA;padding:10px 12px;font-family:Inter,sans-serif;font-size:13px}
 textarea{resize:vertical;min-height:80px}
 .note-item{display:flex;align-items:start;gap:16px;padding:22px 0;border-bottom:1px solid #2A2A2A;line-height:1.6}
@@ -191,9 +193,9 @@ function App(){
           </div>
         ))}
         <div className="pagination">
-          <button className="inactive" onClick={()=>setPage(p=>Math.max(1,p-1))}>‹</button>
-          {pages.map((v,i)=> v==='...' ? <span key={i} className="dots">...</span> : <button key={v} className={v===page?'active':'inactive'} onClick={()=>setPage(v)}>{v}</button>)}
-          <button className="inactive" onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>›</button>
+          <button className="arrow inactive" onClick={()=>setPage(p=>Math.max(1,p-1))}>←</button>
+          {pages.map((v,i)=> v==='...' ? <span key={i} className="dots">…</span> : <button key={v} className={v===page?'active':'inactive'} onClick={()=>setPage(v)}>{v}</button>)}
+          <button className="arrow inactive" onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>→</button>
           <span style={{marginLeft:'12px',color:'#555',fontSize:'11px'}}>跳頁 <input type="number" min={1} max={totalPages} value={page} onChange={e=>{let n=parseInt(e.target.value)||1; if(n>=1&&n<=totalPages) setPage(n)}} style={{width:'60px',display:'inline-block',padding:'4px'}}/> / {totalPages}</span>
         </div>
         <button onClick={addWorkDraft} style={{marginTop:'24px',fontFamily:'Inter',fontSize:'11px',border:'1px dashed #2A2A2A',borderRadius:'9999px',padding:'10px 18px'}}>+ 新增作品</button>
@@ -244,9 +246,9 @@ function App(){
           </div>
         ))}
         <div className="pagination">
-          <button className="inactive" onClick={()=>setNotesPage(p=>Math.max(1,p-1))}>‹</button>
-          {notesPages.map((v,i)=> v==='...' ? <span key={i} className="dots">...</span> : <button key={'n-'+v} className={v===notesPage?'active':'inactive'} onClick={()=>setNotesPage(v)}>{v}</button>)}
-          <button className="inactive" onClick={()=>setNotesPage(p=>Math.min(totalNotesPages,p+1))}>›</button>
+          <button className="arrow inactive" onClick={()=>setNotesPage(p=>Math.max(1,p-1))}>←</button>
+          {notesPages.map((v,i)=> v==='...' ? <span key={i} className="dots">…</span> : <button key={'n-'+v} className={v===notesPage?'active':'inactive'} onClick={()=>setNotesPage(v)}>{v}</button>)}
+          <button className="arrow inactive" onClick={()=>setNotesPage(p=>Math.min(totalNotesPages,p+1))}>→</button>
           <span style={{marginLeft:'12px',color:'#555',fontSize:'11px'}}>跳頁 <input type="number" min={1} max={totalNotesPages} value={notesPage} onChange={e=>{let n=parseInt(e.target.value)||1; if(n>=1&&n<=totalNotesPages) setNotesPage(n)}} style={{width:'60px',display:'inline-block',padding:'4px'}}/> / {totalNotesPages}</span>
         </div>
         <button onClick={addNoteDraft} style={{marginTop:'24px',fontFamily:'Inter',fontSize:'11px',border:'1px dashed #2A2A2A',borderRadius:'9999px',padding:'10px 18px'}}>+ 新增隨筆</button>
