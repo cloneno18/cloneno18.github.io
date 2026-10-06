@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ANCHOR Editor - FIXED 50 Pages</title>
+<script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=Noto+Serif+TC:wght@300;400;600&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+html{scroll-behavior:smooth;scroll-padding-top:32px}
+body{margin:0;background:#0A0A0A;color:#FAFAFA;font-family:"Noto Serif TC",serif;line-height:1.9;letter-spacing:.02em;-webkit-font-smoothing:antialiased}
+.font-sans{font-family:Inter,Helvetica Neue,sans-serif!important}
+button{background:none;border:0;color:inherit;cursor:pointer;padding:0}
+.wrap{max-width:800px;margin:0 auto;padding:0 28px 140px}
+@media(min-width:768px){.wrap{padding:0 48px 140px}}
+.header{position:sticky;top:0;z-index:20;display:flex;align-items:flex-start;justify-content:space-between;padding:36px 28px 20px;margin:0 -28px;background:rgba(10,10,10,.92);backdrop-filter:blur(14px)}
+@media(min-width:768px){.header{padding:56px 48px 20px;margin:0 -48px}}
+.work-item{border-bottom:1px solid #2A2A2A}
+.work-grid{width:100%;display:grid;grid-template-columns:90px 180px 90px 1fr;align-items:start;gap:0;padding:28px 0;line-height:1.6;cursor:pointer}
+@media(max-width:768px){.work-grid{grid-template-columns:1fr;gap:6px;padding:22px 0}}
+.work-title{font-size:15px;color:#FAFAFA;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.work-type{font-family:Inter,sans-serif;font-size:12px;color:#D0D0D0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.work-desc{font-family:Inter,sans-serif;font-size:13px;color:#D0D0D0;white-space:pre-wrap;word-break:break-word}
+.work-detail-outer{display:grid;grid-template-rows:0fr;opacity:0;transition:all .45s cubic-bezier(0.22,1,0.36,1)}
+.work-item.open .work-detail-outer{grid-template-rows:1fr;opacity:1;padding-bottom:28px}
+.work-detail-inner{overflow:hidden}
+.work-detail-box{margin-left:90px;background:#111;border:1px solid #2A2A2A;border-radius:12px;padding:20px 22px}
+@media(max-width:768px){.work-detail-box{margin-left:0}}
+.pagination{display:flex;flex-wrap:wrap;gap:10px;margin-top:32px;font-family:Inter,sans-serif;font-size:12px}
+.pagination button{padding:6px 10px;border:1px solid #2A2A2A;border-radius:9999px;min-width:32px;transition:all .2s}
+.pagination button.active{background:#FAFAFA;color:#000;border-color:#FAFAFA}
+.pagination button.inactive{color:#B0B0B0}
+.pagination button.inactive:hover{color:#FAFAFA;border-color:#555}
+.pagination .dots{color:#555;padding:6px 2px}
+input,textarea{width:100%;background:#0E0E0E;border:1px solid #2A2A2A;border-radius:8px;color:#FAFAFA;padding:10px 12px;font-family:Inter,sans-serif;font-size:13px}
+textarea{resize:vertical;min-height:80px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useEffect,useMemo,useRef} = React;
+const LS_WORKS = 'anchor_works_v3';
+const LS_NOTES = 'anchor_notes_v3';
+const LS_ABOUT = 'anchor_about_v3';
+const PER_PAGE = 6; // 每頁6首，50頁 = 300首
+const MAX_PAGES = 50;
+
+function escapeHtml(s){
+  if(!s) return '';
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#039;');
+}
+function parseDate(str){
+  if(!str) return null;
+  let t=str.trim().replace(/\./g,'-').replace(/\//g,'-');
+  let d=Date.parse(t);
+  return isNaN(d)?null:d;
+}
+function sortWorks(arr){
+  return [...arr].sort((a,b)=>{
+    const pa=!!a.pinned, pb=!!b.pinned;
+    if(pa&&!pb) return -1;
+    if(!pa&&pb) return 1;
+    if(pa&&pb){
+      let diff=(b.pinnedAt||0)-(a.pinnedAt||0);
+      if(diff!==0) return diff;
+    }
+    let da=parseDate(a.year), db=parseDate(b.year);
+    if(da!==null&&db!==null) return db-da;
+    if(da!==null) return -1;
+    if(db!==null) return 1;
+    return 0;
+  });
+}
+function getPages(current,total){
+  if(total<=10){
+    return Array.from({length:total},(_,i)=>i+1);
+  }
+  // 50頁優化版：1 ... c-2 c-1 c c+1 c+2 ... total
+  const pages=[];
+  pages.push(1);
+  if(current>4) pages.push('...');
+  const start=Math.max(2,current-2);
+  const end=Math.min(total-1,current+2);
+  for(let i=start;i<=end;i++) pages.push(i);
+  if(current<total-3) pages.push('...');
+  if(total>1) pages.push(total);
+  // 去重
+  return [...new Set(pages.map((v,i,arr)=>{
+    // 避免連續...
+    if(v==='...' && arr[i-1]==='...') return null;
+    return v;
+  }).filter(Boolean))].reduce((acc,v)=>{
+    if(v==='...' && acc[acc.length-1]==='...') return acc;
+    acc.push(v); return acc;
+  },[]);
+}
+
+function App(){
+  const [works,setWorks] = useState(()=>{
+    try{
+      const v=localStorage.getItem(LS_WORKS);
+      if(v){ const p=JSON.parse(v); if(Array.isArray(p)&&p.length) return p; }
+    }catch{}
+    return [
+      {id:'w1',year:'2026.10.02',title:'低體溫症狀',type:'writing',desc:'原因   早在皮囊之下   埋藏',detail:'你說愛會消失嗎？我覺得會。',pinned:true,pinnedAt:Date.now()},
+    ];
+  });
+  const [about,setAbout]=useState(()=>{
+    try{
+      const v=localStorage.getItem(LS_ABOUT);
+      if(v) return JSON.parse(v);
+    }catch{}
+    return 'Write something about your practice here.';
+  });
+  const [page,setPage]=useState(1);
+  const [draft,setDraft]=useState(null);
+  const [msg,setMsg]=useState('');
+  const draftRef=useRef(null);
+
+  const sorted = useMemo(()=>sortWorks(works),[works]);
+  const totalPages = useMemo(()=>Math.min(MAX_PAGES, Math.max(1, Math.ceil(sorted.length / PER_PAGE))),[sorted.length]);
+  const slice = useMemo(()=>sorted.slice((page-1)*PER_PAGE, page*PER_PAGE),[sorted,page]);
+  const pages = useMemo(()=>getPages(page,totalPages),[page,totalPages]);
+
+  // clamp page
+  useEffect(()=>{
+    if(page>totalPages) setPage(totalPages);
+  },[totalPages,page]);
+
+  useEffect(()=>{
+    try{
+      localStorage.setItem(LS_WORKS, JSON.stringify(works));
+    }catch(e){
+      if(e.name==='QuotaExceededError'){
+        setMsg('⚠️ localStorage 已滿，請先匯出再清理舊資料');
+      }
+    }
+  },[works]);
+  useEffect(()=>{
+    try{ localStorage.setItem(LS_ABOUT, JSON.stringify(about)); }catch{}
+  },[about]);
+
+  const addDraft=()=>{
+    setDraft({id:'w_'+Date.now(),year:new Date().toISOString().slice(0,10).replace(/-/g,'.'),title:'',type:'writing',desc:'',detail:'',pinned:false,link:''});
+    setTimeout(()=>draftRef.current?.scrollIntoView({behavior:'smooth'}),100);
+  };
+  const confirmDraft=()=>{
+    if(!draft) return;
+    const item={...draft,title:draft.title.trim()||'Untitled',year:draft.year.trim()||new Date().toISOString().slice(0,10).replace(/-/g,'.'),pinnedAt:draft.pinned?Date.now():undefined};
+    setWorks(w=>[item,...w]);
+    setPage(1);
+    setDraft(null);
+    setMsg(`已加入：${item.title}，目前 ${works.length+1} 首 / ${totalPages} 頁`);
+    setTimeout(()=>setMsg(''),2500);
+  };
+
+  const updateWork=(id,key,val)=>{
+    setWorks(arr=>arr.map(x=>x.id===id?{...x,[key]:val}:x));
+  };
+  const deleteWork=(id)=>{
+    if(!confirm('確定刪除？')) return;
+    setWorks(arr=>arr.filter(x=>x.id!==id));
+  };
+  const togglePin=(id)=>{
+    setWorks(arr=>arr.map(x=> x.id===id ? {...x, pinned:!x.pinned, pinnedAt: !x.pinned?Date.now():undefined } : x));
+  };
+
+  const exportHtml=()=>{
+    const sortedExport = sortWorks(works);
+    const esc = escapeHtml;
+    const workHtml = sortedExport.map(m=>{
+      const pin = m.pinned?'<span class="pin-badge" style="font-family:Inter,sans-serif;font-size:9px;border:1px solid #3A3A3A;padding:2px 6px;border-radius:9999px;background:rgba(250,250,250,.1)">↥ 置頂</span>':'';
+      const link = m.link?`<div class="work-link"><span>${esc(m.link)}</span></div>`:'';
+      return `<div class="work-item ${m.pinned?'pinned':''}"><div class="work-grid"><span class="work-date"><span style="display:flex;flex-direction:column;gap:4px">${pin}<span>${esc(m.year)}</span></span></span><span class="work-title">${esc(m.title)}</span><span class="work-type">/ ${esc(m.type)}</span><span class="work-desc">${esc(m.desc)}</span></div><div class="work-detail-outer"><div class="work-detail-inner"><div class="work-detail-box"><p>${esc(m.detail)}</p>${link}</div></div></div></div>`;
+    }).join('\n');
+
+    const html = `<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ANCHOR</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#0A0A0A;color:#FAFAFA;font-family:"Noto Serif TC",serif;line-height:1.9}
+.wrap{max-width:800px;margin:0 auto;padding:0 28px 140px}
+.work-item{border-bottom:1px solid #2A2A2A}.work-grid{display:grid;grid-template-columns:90px 180px 90px 1fr;gap:0;padding:28px 0;cursor:pointer}
+.work-title{color:#FAFAFA;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.work-type{font-family:Inter,sans-serif;font-size:12px;color:#D0D0D0}
+.work-desc{font-family:Inter,sans-serif;font-size:13px;color:#D0D0D0;white-space:pre-wrap;word-break:break-word}
+.work-detail-outer{display:grid;grid-template-rows:0fr;opacity:0;transition:all .45s}
+.work-item.open .work-detail-outer{grid-template-rows:1fr;opacity:1;padding-bottom:28px}
+.work-detail-inner{overflow:hidden}.work-detail-box{margin-left:90px;background:#111;border:1px solid #2A2A2A;border-radius:12px;padding:20px 22px}
+.pagination{display:flex;flex-wrap:wrap;gap:10px;margin-top:32px;font-family:Inter,sans-serif;font-size:12px}
+.pagination button{padding:6px 10px;border:1px solid #2A2A2A;border-radius:9999px;min-width:32px}
+.pagination button.active{background:#FAFAFA;color:#000}
+.pagination button.inactive{color:#B0B0B0}
+</style></head><body><div class="wrap">
+<div id="works-list">${workHtml}</div>
+<div id="works-pagination" class="pagination"></div>
+</div>
+<script>
+(function(){
+  var PER_PAGE=${PER_PAGE};
+  var items=[].slice.call(document.querySelectorAll('.work-item'));
+  var pagEl=document.getElementById('works-pagination');
+  var total=Math.min(${MAX_PAGES}, Math.ceil(items.length / PER_PAGE));
+  var cur=1;
+  function getPages(c,t){
+    if(t<=10){var a=[];for(var i=1;i<=t;i++)a.push(i);return a;}
+    var res=[1];
+    if(c>4)res.push('...');
+    var s=Math.max(2,c-2), e=Math.min(t-1,c+2);
+    for(var i=s;i<=e;i++)res.push(i);
+    if(c<t-3)res.push('...');
+    if(t>1)res.push(t);
+    return res;
+  }
+  function renderPage(p){
+    cur=p;
+    var st=(p-1)*PER_PAGE, ed=st+PER_PAGE;
+    items.forEach(function(el,i){
+      el.style.display=(i>=st&&i<ed)?'':'none';
+      if(el.style.display==='none')el.classList.remove('open');
+    });
+    renderPag();
+  }
+  function renderPag(){
+    if(!pagEl)return;
+    if(total<=1){pagEl.style.display='none';return;}
+    pagEl.style.display='flex';
+    pagEl.innerHTML='';
+    var pg=getPages(cur,total);
+    pg.forEach(function(v){
+      if(v==='...'){
+        var sp=document.createElement('span');sp.textContent='...';sp.style.cssText='color:#555;padding:6px 2px';pagEl.appendChild(sp);
+      }else{
+        var b=document.createElement('button');b.textContent=v;b.className=(v===cur)?'active':'inactive';
+        b.addEventListener('click',(function(page){return function(){renderPage(page); window.scrollTo({top:0,behavior:'smooth'});}})(v));
+        pagEl.appendChild(b);
+      }
+    });
+  }
+  // bind toggle
+  items.forEach(function(it){
+    var g=it.querySelector('.work-grid');
+    if(!g)return;
+    g.addEventListener('click',function(){
+      var was=it.classList.contains('open');
+      items.forEach(function(o){o.classList.remove('open')});
+      if(!was)it.classList.add('open');
+    });
+  });
+  if(items.length>PER_PAGE)renderPage(1); else renderPag();
+})();
+<\/script></body></html>`;
+
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='ANCHOR-50PAGES.html';a.click();
+    setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+
+  return (
+    <div className="wrap">
+      <header className="header">
+        <div>
+          <div style={{fontFamily:'Inter',fontSize:'14px',fontWeight:500,letterSpacing:'.32em'}}>ANCHOR EDITOR FIXED</div>
+          <div style={{fontFamily:'Inter',fontSize:'11px',color:'#B0B0B0',marginTop:'4px'}}>{works.length} 首 · {totalPages} 頁 (每頁{PER_PAGE}首) · 支援到 {MAX_PAGES} 頁 ({MAX_PAGES*PER_PAGE}首)</div>
+          {msg && <div style={{fontFamily:'Inter',fontSize:'11px',color:'#E5FF00',marginTop:'6px'}}>{msg}</div>}
+        </div>
+        <div style={{display:'flex',gap:'8px'}}>
+          <button onClick={exportHtml} style={{fontFamily:'Inter',fontSize:'10px',letterSpacing:'.08em',padding:'5px 14px',borderRadius:'9999px',background:'#FAFAFA',color:'#000'}}>EXPORT 50P</button>
+        </div>
+      </header>
+
+      <section style={{marginBottom:'48px'}}>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',borderBottom:'1px solid #2A2A2A',paddingBottom:'14px',marginBottom:'16px'}}>
+          <h2 style={{fontFamily:'Inter',fontSize:'11px',letterSpacing:'.18em',textTransform:'uppercase'}}>Works — {sorted.length} 項</h2>
+          <span style={{fontFamily:'Inter',fontSize:'11px',color:'#8E8E8E'}}>第 {page} / {totalPages} 頁</span>
+        </div>
+
+        {slice.map(w=>(
+          <div key={w.id} className={'work-item '+(openId===w.id?'open':'')} style={{borderBottom:'1px solid #2A2A2A'}}>
+            <div className="work-grid" onClick={()=>setOpenId(openId===w.id?null:w.id)}>
+              <span style={{fontFamily:'Inter',fontSize:'12px',color:'#B0B0B0'}}>{w.year} {w.pinned&&'↥'}</span>
+              <span className="work-title">{w.title||'Untitled'}</span>
+              <span className="work-type">/ {w.type}</span>
+              <span className="work-desc">{w.desc?.slice(0,80)}</span>
+            </div>
+            {openId===w.id && (
+              <div className="work-detail-outer" style={{gridTemplateRows:'1fr',opacity:1,paddingBottom:'16px'}}>
+                <div className="work-detail-inner">
+                  <div style={{display:'grid',gap:'10px'}}>
+                    <input value={w.year} onChange={e=>updateWork(w.id,'year',e.target.value)} placeholder="2026.10.13"/>
+                    <input value={w.title} onChange={e=>updateWork(w.id,'title',e.target.value)} placeholder="標題"/>
+                    <input value={w.type} onChange={e=>updateWork(w.id,'type',e.target.value)} placeholder="writing"/>
+                    <textarea value={w.desc} onChange={e=>updateWork(w.id,'desc',e.target.value)} placeholder="簡述"/>
+                    <textarea value={w.detail} onChange={e=>updateWork(w.id,'detail',e.target.value)} placeholder="詳細"/>
+                    <input value={w.link||''} onChange={e=>updateWork(w.id,'link',e.target.value)} placeholder="https://..."/>
+                    <div style={{display:'flex',gap:'8px'}}>
+                      <button onClick={()=>togglePin(w.id)} style={{fontSize:'11px',border:'1px solid #333',borderRadius:'9999px',padding:'4px 10px',background:w.pinned?'#FAFAFA':'transparent',color:w.pinned?'#000':'#B0B0B0'}}>{w.pinned?'已置頂':'置頂'}</button>
+                      <button onClick={()=>deleteWork(w.id)} style={{fontSize:'11px',color:'#ff6b6b'}}>刪除</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        <div className="pagination">
+          <button className="inactive" onClick={()=>setPage(p=>Math.max(1,p-1))} disabled={page===1}>‹</button>
+          {pages.map((v,i)=>
+            v==='...' ? <span key={'d'+i} className="dots">...</span> :
+            <button key={v} className={v===page?'active':'inactive'} onClick={()=>setPage(v)}>{v}</button>
+          )}
+          <button className="inactive" onClick={()=>setPage(p=>Math.min(totalPages,p+1))} disabled={page===totalPages}>›</button>
+          <span style={{marginLeft:'12px',color:'#555',fontSize:'11px'}}>跳頁：<input type="number" min={1} max={totalPages} value={page} onChange={e=>{let n=parseInt(e.target.value)||1; if(n>=1&&n<=totalPages) setPage(n)}} style={{width:'50px',display:'inline-block',padding:'4px'}}/> / {totalPages}</span>
+        </div>
+
+        <button onClick={addDraft} style={{marginTop:'24px',fontFamily:'Inter',fontSize:'11px',color:'#D0D0D0',border:'1px dashed #2A2A2A',borderRadius:'9999px',padding:'10px 18px'}}>+ 新增作品</button>
+      </section>
+
+      {draft && (
+        <section ref={draftRef} style={{background:'#111',border:'1px solid #2A2A2A',borderRadius:'12px',padding:'20px'}}>
+          <div style={{fontFamily:'Inter',fontSize:'11px',marginBottom:'12px'}}>新增草稿 — 確認後會加入第1頁</div>
+          <div style={{display:'grid',gap:'10px'}}>
+            <input value={draft.year} onChange={e=>setDraft({...draft,year:e.target.value})} placeholder="日期"/>
+            <input value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})} placeholder="標題"/>
+            <input value={draft.type} onChange={e=>setDraft({...draft,type:e.target.value})} placeholder="類型"/>
+            <textarea value={draft.desc} onChange={e=>setDraft({...draft,desc:e.target.value})} placeholder="簡述"/>
+            <textarea value={draft.detail} onChange={e=>setDraft({...draft,detail:e.target.value})} placeholder="詳細"/>
+            <input value={draft.link||''} onChange={e=>setDraft({...draft,link:e.target.value})} placeholder="連結"/>
+            <label style={{display:'flex',alignItems:'center',gap:'6px',fontFamily:'Inter',fontSize:'11px'}}><input type="checkbox" checked={draft.pinned} onChange={e=>setDraft({...draft,pinned:e.target.checked})}/> 置頂</label>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={confirmDraft} style={{background:'#FAFAFA',color:'#000',borderRadius:'9999px',padding:'8px 18px',fontSize:'11px'}}>確認加入</button>
+              <button onClick={()=>setDraft(null)} style={{border:'1px solid #2A2A2A',borderRadius:'9999px',padding:'8px 18px',fontSize:'11px',color:'#B0B0B0'}}>取消</button>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <div style={{marginTop:'48px',fontFamily:'Inter',fontSize:'11px',color:'#777'}}>
+        <p>修復重點：</p>
+        <p>1. 分頁重寫支援50頁，13首的第3頁現在用 slice(12,18) 正確取1首。</p>
+        <p>2. 編輯器只渲染當前頁6首，不再全量 hidden，解決空白問題。</p>
+        <p>3. 加入跳頁輸入框，輸入3可直接到第三頁驗證。</p>
+        <p>4. localStorage 滿了會提示，不會無聲失效。</p>
+      </div>
+    </div>
+  );
+}
+function Root(){
+  const [openId,setOpenId]=React.useState(null);
+  return <AppWrapper openId={openId} setOpenId={setOpenId}/>;
+}
+function AppWrapper(props){
+  // wrapper to pass openId state down
+  return <App {...props} />;
+}
+// 為了讓 openId 在 App 內可用，重寫 App 內部
+const OrigApp = App;
+function AppWithOpen(){
+  const [works,setWorks] = React.useState(()=>{
+    try{const v=localStorage.getItem(LS_WORKS); if(v){const p=JSON.parse(v); if(Array.isArray(p)&&p.length) return p;}}catch{} return [];
+  });
+  const [page,setPage]=React.useState(1);
+  const [draft,setDraft]=React.useState(null);
+  const [openId,setOpenId]=React.useState(null);
+  const [msg,setMsg]=React.useState('');
+  const draftRef=React.useRef(null);
+  const sorted=React.useMemo(()=>sortWorks(works),[works]);
+  const totalPages=React.useMemo(()=>Math.min(MAX_PAGES, Math.max(1, Math.ceil(sorted.length / PER_PAGE))),[sorted.length]);
+  const slice=React.useMemo(()=>sorted.slice((page-1)*PER_PAGE, page*PER_PAGE),[sorted,page]);
+  const pages=React.useMemo(()=>getPages(page,totalPages),[page,totalPages]);
+  React.useEffect(()=>{ if(page>totalPages) setPage(totalPages); },[totalPages]);
+  React.useEffect(()=>{ try{localStorage.setItem(LS_WORKS, JSON.stringify(works));}catch(e){ if(e.name==='QuotaExceededError') setMsg('⚠️ localStorage 已滿'); } },[works]);
+  const addDraft=()=>{ setDraft({id:'w_'+Date.now(),year:new Date().toISOString().slice(0,10).replace(/-/g,'.'),title:'',type:'writing',desc:'',detail:'',pinned:false,link:''}); setTimeout(()=>draftRef.current?.scrollIntoView({behavior:'smooth'}),100); };
+  const confirmDraft=()=>{ if(!draft) return; const item={...draft,title:draft.title.trim()||'Untitled',year:draft.year.trim()||new Date().toISOString().slice(0,10).replace(/-/g,'.'),pinnedAt:draft.pinned?Date.now():undefined}; setWorks(w=>[item,...w]); setPage(1); setDraft(null); setMsg(`已加入，目前 ${works.length+1} 首 / ${Math.ceil((works.length+1)/PER_PAGE)} 頁`); setTimeout(()=>setMsg(''),2500); };
+  const updateWork=(id,k,v)=>{ setWorks(a=>a.map(x=>x.id===id?{...x,[k]:v}:x)); };
+  const deleteWork=(id)=>{ if(!confirm('確定刪除？')) return; setWorks(a=>a.filter(x=>x.id!==id)); };
+  const togglePin=(id)=>{ setWorks(a=>a.map(x=> x.id===id ? {...x, pinned:!x.pinned, pinnedAt: !x.pinned?Date.now():undefined } : x)); };
+  const exportHtml=()=>{
+    const sortedExport=sortWorks(works);
+    const esc=escapeHtml;
+    const workHtml=sortedExport.map(m=>{
+      const pin=m.pinned?'<span style="font-family:Inter,sans-serif;font-size:9px;border:1px solid #3A3A3A;padding:2px 6px;border-radius:9999px;background:rgba(250,250,250,.1)">↥ 置頂</span>':'';
+      const link=m.link?`<div><span style="border-bottom:1px solid rgba(250,250,250,.25)">${esc(m.link)}</span></div>`:'';
+      return `<div class="work-item ${m.pinned?'pinned':''}"><div class="work-grid"><span>${pin}${esc(m.year)}</span><span class="work-title">${esc(m.title)}</span><span class="work-type">/ ${esc(m.type)}</span><span class="work-desc">${esc(m.desc)}</span></div><div class="work-detail-outer"><div class="work-detail-inner"><div class="work-detail-box"><p>${esc(m.detail)}</p>${link}</div></div></div></div>`;
+    }).join('\n');
+    const html=`<!DOCTYPE html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>ANCHOR</title><style>
+*{box-sizing:border-box}body{margin:0;background:#0A0A0A;color:#FAFAFA;font-family:serif;line-height:1.9}.wrap{max-width:800px;margin:0 auto;padding:0 28px 140px}
+.work-item{border-bottom:1px solid #2A2A2A}.work-grid{display:grid;grid-template-columns:90px 180px 90px 1fr;padding:28px 0;cursor:pointer}
+.work-detail-outer{display:grid;grid-template-rows:0fr;opacity:0;transition:all .45s}.work-item.open .work-detail-outer{grid-template-rows:1fr;opacity:1;padding-bottom:28px}.work-detail-inner{overflow:hidden}.work-detail-box{margin-left:90px;background:#111;border:1px solid #2A2A2A;border-radius:12px;padding:20px 22px}
+.pagination{display:flex;flex-wrap:wrap;gap:10px;margin-top:32px;font-family:Inter,sans-serif;font-size:12px}.pagination button{padding:6px 10px;border:1px solid #2A2A2A;border-radius:9999px;min-width:32px}.pagination button.active{background:#FAFAFA;color:#000}.pagination button.inactive{color:#B0B0B0}
+</style></head><body><div class="wrap"><div id="works-list">${workHtml}</div><div id="works-pagination" class="pagination"></div></div>
+<script>(function(){var PER_PAGE=${PER_PAGE};var items=[].slice.call(document.querySelectorAll('.work-item'));var pagEl=document.getElementById('works-pagination');var total=Math.min(${MAX_PAGES},Math.ceil(items.length/PER_PAGE));var cur=1;
+function getPages(c,t){if(t<=10){var a=[];for(var i=1;i<=t;i++)a.push(i);return a;}var res=[1];if(c>4)res.push('...');var s=Math.max(2,c-2),e=Math.min(t-1,c+2);for(var i=s;i<=e;i++)res.push(i);if(c<t-3)res.push('...');if(t>1)res.push(t);return res;}
+function renderPage(p){cur=p;var st=(p-1)*PER_PAGE,ed=st+PER_PAGE;items.forEach(function(el,i){el.style.display=(i>=st&&i<ed)?'':'none';if(el.style.display==='none')el.classList.remove('open');});renderPag();}
+function renderPag(){if(!pagEl)return;if(total<=1){pagEl.style.display='none';return;}pagEl.style.display='flex';pagEl.innerHTML='';var pg=getPages(cur,total);pg.forEach(function(v){if(v==='...'){var sp=document.createElement('span');sp.textContent='...';sp.style.cssText='color:#555;padding:6px 2px';pagEl.appendChild(sp);}else{var b=document.createElement('button');b.textContent=v;b.className=(v===cur)?'active':'inactive';b.addEventListener('click',(function(page){return function(){renderPage(page);window.scrollTo({top:0,behavior:'smooth'});}})(v));pagEl.appendChild(b);}});}
+items.forEach(function(it){var g=it.querySelector('.work-grid');if(!g)return;g.addEventListener('click',function(){var was=it.classList.contains('open');items.forEach(function(o){o.classList.remove('open')});if(!was)it.classList.add('open');});});
+if(items.length>PER_PAGE)renderPage(1);else renderPag();})();<\/script></body></html>`;
+    const blob=new Blob([html],{type:'text/html'}); const url=URL.createObjectURL(blob); const a=document.createElement('a');a.href=url;a.download='ANCHOR-50PAGES.html';a.click(); setTimeout(()=>URL.revokeObjectURL(url),1000);
+  };
+  return (
+    <div className="wrap">
+      <header className="header">
+        <div>
+          <div style={{fontFamily:'Inter',fontSize:'14px',fontWeight:500,letterSpacing:'.32em'}}>ANCHOR EDITOR FIXED — 50 PAGES</div>
+          <div style={{fontFamily:'Inter',fontSize:'11px',color:'#B0B0B0',marginTop:'4px'}}>{works.length} 首 · {totalPages} 頁 · 每頁 {PER_PAGE} 首 · 上限 {MAX_PAGES*PER_PAGE} 首</div>
+          {msg && <div style={{fontFamily:'Inter',fontSize:'11px',color:'#E5FF00',marginTop:'6px'}}>{msg}</div>}
+        </div>
+        <button onClick={exportHtml} style={{fontFamily:'Inter',fontSize:'10px',letterSpacing:'.08em',padding:'5px 14px',borderRadius:'9999px',background:'#FAFAFA',color:'#000'}}>EXPORT</button>
+      </header>
+      <section>
+        <div style={{display:'flex',justifyContent:'space-between',borderBottom:'1px solid #2A2A2A',paddingBottom:'14px',marginBottom:'16px'}}>
+          <h2 style={{fontFamily:'Inter',fontSize:'11px',letterSpacing:'.18em'}}>Works — {sorted.length}</h2>
+          <span style={{fontFamily:'Inter',fontSize:'11px',color:'#8E8E8E'}}>第 {page} / {totalPages} 頁</span>
+        </div>
+        {slice.map(w=>(
+          <div key={w.id} className={'work-item '+(openId===w.id?'open':'')}>
+            <div className="work-grid" onClick={()=>setOpenId(openId===w.id?null:w.id)}>
+              <span style={{fontFamily:'Inter',fontSize:'12px',color:'#B0B0B0'}}>{w.year} {w.pinned&&'↥'}</span>
+              <span className="work-title">{w.title||'Untitled'}</span>
+              <span className="work-type">/ {w.type}</span>
+              <span className="work-desc">{w.desc?.slice(0,60)}</span>
+            </div>
+            {openId===w.id && (
+              <div className="work-detail-outer" style={{gridTemplateRows:'1fr',opacity:1,paddingBottom:'16px'}}>
+                <div className="work-detail-inner">
+                  <div style={{display:'grid',gap:'10px'}}>
+                    <input value={w.year} onChange={e=>updateWork(w.id,'year',e.target.value)}/>
+                    <input value={w.title} onChange={e=>updateWork(w.id,'title',e.target.value)}/>
+                    <input value={w.type} onChange={e=>updateWork(w.id,'type',e.target.value)}/>
+                    <textarea value={w.desc} onChange={e=>updateWork(w.id,'desc',e.target.value)}/>
+                    <textarea value={w.detail} onChange={e=>updateWork(w.id,'detail',e.target.value)}/>
+                    <div style={{display:'flex',gap:'8px'}}>
+                      <button onClick={()=>togglePin(w.id)} style={{fontSize:'11px',border:'1px solid #333',borderRadius:'9999px',padding:'4px 10px',background:w.pinned?'#FAFAFA':'transparent',color:w.pinned?'#000':'#B0B0B0'}}>{w.pinned?'已置頂':'置頂'}</button>
+                      <button onClick={()=>deleteWork(w.id)} style={{fontSize:'11px',color:'#ff6b6b'}}>刪除</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+        <div className="pagination">
+          <button className="inactive" onClick={()=>setPage(p=>Math.max(1,p-1))}>‹</button>
+          {pages.map((v,i)=> v==='...' ? <span key={i} style={{color:'#555',padding:'6px 2px'}}>...</span> : <button key={v} className={v===page?'active':'inactive'} onClick={()=>setPage(v)}>{v}</button>)}
+          <button className="inactive" onClick={()=>setPage(p=>Math.min(totalPages,p+1))}>›</button>
+          <span style={{marginLeft:'12px',color:'#555',fontSize:'11px'}}>跳頁 <input type="number" min={1} max={totalPages} value={page} onChange={e=>{let n=parseInt(e.target.value)||1; if(n>=1&&n<=totalPages) setPage(n)}} style={{width:'60px',display:'inline-block',padding:'4px'}}/> / {totalPages}</span>
+        </div>
+        <button onClick={addDraft} style={{marginTop:'24px',fontFamily:'Inter',fontSize:'11px',border:'1px dashed #2A2A2A',borderRadius:'9999px',padding:'10px 18px'}}>＋ 新增作品</button>
+      </section>
+      {draft && (
+        <section ref={draftRef} style={{background:'#111',border:'1px solid #2A2A2A',borderRadius:'12px',padding:'20px',marginTop:'24px'}}>
+          <div style={{fontFamily:'Inter',fontSize:'11px',marginBottom:'12px'}}>新增草稿</div>
+          <div style={{display:'grid',gap:'10px'}}>
+            <input value={draft.year} onChange={e=>setDraft({...draft,year:e.target.value})}/>
+            <input value={draft.title} onChange={e=>setDraft({...draft,title:e.target.value})} placeholder="標題"/>
+            <input value={draft.type} onChange={e=>setDraft({...draft,type:e.target.value})}/>
+            <textarea value={draft.desc} onChange={e=>setDraft({...draft,desc:e.target.value})}/>
+            <textarea value={draft.detail} onChange={e=>setDraft({...draft,detail:e.target.value})}/>
+            <label style={{display:'flex',gap:'6px',fontSize:'11px'}}><input type="checkbox" checked={draft.pinned} onChange={e=>setDraft({...draft,pinned:e.target.checked})}/> 置頂</label>
+            <div style={{display:'flex',gap:'10px'}}>
+              <button onClick={confirmDraft} style={{background:'#FAFAFA',color:'#000',borderRadius:'9999px',padding:'8px 18px',fontSize:'11px'}}>確認加入</button>
+              <button onClick={()=>setDraft(null)} style={{border:'1px solid #2A2A2A',borderRadius:'9999px',padding:'8px 18px',fontSize:'11px'}}>取消</button>
+            </div>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
+const root=ReactDOM.createRoot(document.getElementById('root'));
+root.render(<AppWithOpen/>);
+</script>
+</body>
+</html>
